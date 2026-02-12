@@ -41,7 +41,7 @@ export default function LoginPage() {
       </div>
 
       <div className="relative w-full max-w-md">
-        <div className="p-8 md:p-10 bg-black/30 backdrop-blur-md rounded-xl border border-white/10 shadow-lg">
+        <div className="p-8 md:p-10 bg-black/30 backdrop-blur-md rounded-xl border border-white/10 shadow-lg ">
           <Image
             src="/Logo/ncip.png"
             alt="NCIP Logo"

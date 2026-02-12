@@ -27,6 +27,15 @@ export interface Document {
   status: 'Pending' | 'Approved' | 'Archived'
   notes: string
   category: DocumentCategory
+  // optional fields for extended table columns
+  to?: string
+  signatory?: string
+  subject?: string
+  dotsNo?: string
+  dateReleased?: string
+  remarksCourier?: string
+  trackingNumber?: string
+  dateMailed?: string
 }
 
 const STORAGE_KEY = 'documents'

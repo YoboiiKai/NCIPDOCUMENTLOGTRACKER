@@ -35,13 +35,13 @@ export default function CategoryTabs({
   onCategoryChange,
 }: CategoryTabsProps) {
   return (
-    <div className="">
-      <div className="flex items-end w-full">
+    <div className="w-full overflow-x-auto scrollbar-hide">
+      <div className="flex items-end w-full min-w-max">
         {CATEGORIES.map((category) => (
           <button
             key={category}
             onClick={() => onCategoryChange(category)}
-            className={`chrome-tab relative flex-1 py-2 px-1 text-xs font-medium text-center transition-all ${
+            className={`chrome-tab relative flex-1 min-w-[60px] sm:min-w-0 py-1.5 sm:py-2 px-2 sm:px-3 text-[10px] sm:text-xs font-medium text-center transition-all whitespace-nowrap ${
               selectedCategory === category
                 ? 'chrome-tab-active'
                 : 'chrome-tab-inactive'
@@ -53,6 +53,13 @@ export default function CategoryTabs({
       </div>
 
       <style>{`
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
         .chrome-tab {
           border-top-left-radius: 8px;
           border-top-right-radius: 8px;
