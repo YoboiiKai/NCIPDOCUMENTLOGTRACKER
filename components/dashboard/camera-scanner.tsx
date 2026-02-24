@@ -13,8 +13,68 @@ interface CameraScannerProps {
 
 type ScanState = 'idle' | 'streaming' | 'cropping' | 'processing' | 'done' | 'error'
 
-// ─── Image pre-processing ─────────────────────────────────────────────────────
-// Greyscale + contrast stretch on the specified region (or full canvas).
+// ─── Image pre-processing pipeline ─────────────────────────────────────────
+// 1. Greyscale  2. Unsharp-mask sharpening  3. Otsu binarisation  4. Padding
+// All passes are O(W×H) — no nested loops over block sizes.
+
+/** Sharpen with a 3×3 Laplacian unsharp-mask kernel in-place */
+function sharpen(data: Uint8ClampedArray, w: number, h: number) {
+  const copy = new Uint8ClampedArray(data)
+  // kernel: [0,-1,0, -1,5,-1, 0,-1,0]  (only luminance channel — already grayscale)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = (y * w + x) * 4
+      const v = Math.min(255, Math.max(0,
+        5  * copy[i]
+        -  copy[((y - 1) * w + x    ) * 4]
+        -  copy[((y + 1) * w + x    ) * 4]
+        -  copy[(y       * w + x - 1) * 4]
+        -  copy[(y       * w + x + 1) * 4]
+      ))
+      data[i] = data[i + 1] = data[i + 2] = v
+    }
+  }
+}
+
+/** Otsu's global threshold → pure black/white */
+function otsuBinarize(data: Uint8ClampedArray, total: number, invert: boolean) {
+  // Build histogram
+  const hist = new Float64Array(256)
+  for (let i = 0; i < data.length; i += 4) hist[data[i]]++
+  // Normalise
+  for (let i = 0; i < 256; i++) hist[i] /= total
+  // Find optimal threshold
+  let sumAll = 0
+  for (let i = 0; i < 256; i++) sumAll += i * hist[i]
+  let sumB = 0, wB = 0, best = 0, threshold = 0
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t]; if (!wB) continue
+    const wF = 1 - wB; if (!wF) break
+    sumB += t * hist[t]
+    const mB = sumB / wB
+    const mF = (sumAll - sumB) / wF
+    const variance = wB * wF * (mB - mF) ** 2
+    if (variance > best) { best = variance; threshold = t }
+  }
+  // Apply
+  for (let i = 0; i < data.length; i += 4) {
+    let v = data[i] > threshold ? 255 : 0
+    if (invert) v = 255 - v
+    data[i] = data[i + 1] = data[i + 2] = v
+  }
+}
+
+/** Add a white border so Tesseract sees clean margins */
+function addPadding(canvas: HTMLCanvasElement, pad: number): HTMLCanvasElement {
+  const out = document.createElement('canvas')
+  out.width  = canvas.width  + pad * 2
+  out.height = canvas.height + pad * 2
+  const ctx = out.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, out.width, out.height)
+  ctx.drawImage(canvas, pad, pad)
+  return out
+}
 
 function preprocessRegion(
   sourceCanvas: HTMLCanvasElement,
@@ -31,8 +91,10 @@ function preprocessRegion(
   const ch = cropPx ? cropPx.h : sh
   if (cw < 4 || ch < 4) throw new Error('Selection is too small')
 
+  // Scale so shortest side ≥ 800 px; max 2× or longest side ≤ 2 400 px
   const shortSide = Math.min(cw, ch)
-  const scale = Math.min(3, Math.max(1, Math.round(1000 / shortSide)))
+  const longSide  = Math.max(cw, ch)
+  const scale = Math.min(3, Math.max(1, Math.ceil(800 / shortSide), Math.ceil(1500 / longSide)))
   const tw = Math.round(cw * scale)
   const th = Math.round(ch * scale)
 
@@ -46,21 +108,25 @@ function preprocessRegion(
 
   const imgData = ctx.getImageData(0, 0, tw, th)
   const d = imgData.data
-  let min = 255, max = 0
+  const total = tw * th
+
+  // 1. Greyscale
   for (let i = 0; i < d.length; i += 4) {
     const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2])
     d[i] = d[i + 1] = d[i + 2] = lum
-    if (lum < min) min = lum
-    if (lum > max) max = lum
   }
-  const range = max - min || 1
-  for (let i = 0; i < d.length; i += 4) {
-    let v = Math.round(((d[i] - min) / range) * 255)
-    if (invert) v = 255 - v
-    d[i] = d[i + 1] = d[i + 2] = v
-  }
+
+  // 2. Sharpen
+  sharpen(d, tw, th)
+
+  // 3. Otsu binarise → pure black / white
+  otsuBinarize(d, total, invert)
+
   ctx.putImageData(imgData, 0, 0)
-  return out.toDataURL('image/png')
+
+  // 4. Add white padding border (20 px)
+  const padded = addPadding(out, 20)
+  return padded.toDataURL('image/png')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +146,9 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
   const [progress,     setProgress]     = useState(0)
   const [invert,       setInvert]       = useState(false)
   const [cropSel,      setCropSel]      = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  // PSM = Tesseract Page Segmentation Mode
+  // 6 = single uniform block (default)  7 = single text line  8 = single word
+  const [psm,          setPsm]          = useState<'6' | '7' | '8'>('6')
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -127,6 +196,11 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
           if (typeof m?.progress === 'number') setProgress(Math.round(20 + m.progress * 75))
         },
       })
+      // Apply PSM and additional Tesseract parameters for accuracy
+      await (worker as any).setParameters({
+        tessedit_pageseg_mode: psm,
+        // preserve_interword_spaces: '1',
+      })
       setProgress(25)
       const { data } = await worker.recognize(dataUrl)
       await worker.terminate()
@@ -137,15 +211,15 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
         .split('\n')
         .map((l: string) => l.trim())
         .filter((l: string) => l.length > 0)
-        .join(' ')
+        .join(psm === '7' || psm === '8' ? '' : ' ')
         .trim()
-      setEditableText(cleaned || '(No text detected — try adjusting the selection or brightness)')
+      setEditableText(cleaned || '(No text detected — try a different text mode or better lighting)')
       setScanState('done')
     } catch (err: any) {
       setErrorMsg(`Recognition failed: ${err?.message ?? String(err)}`)
       setScanState('error')
     }
-  }, [])
+  }, [psm])
 
   // ── Capture: freeze frame → go to cropping ─────────────────────────────────
   const handleCapture = useCallback(() => {
@@ -421,6 +495,32 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
                 ? 'Selection ready — tap Extract Selection, or redraw to adjust.'
                 : 'Drag on the image to outline the text you want to extract.'}
             </p>
+          </div>
+        )}
+
+        {/* PSM mode strip — shown during cropping */}
+        {scanState === 'cropping' && (
+          <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wide shrink-0">Text mode:</span>
+            {([
+              { value: '6', label: 'Paragraph',   desc: 'Multiple lines / full block' },
+              { value: '7', label: 'Single Line',  desc: 'One line (dates, names, ref #)' },
+              { value: '8', label: 'Single Word',  desc: 'One short word or number' },
+            ] as { value: '6'|'7'|'8'; label: string; desc: string }[]).map(({ value, label, desc }) => (
+              <button
+                key={value}
+                type="button"
+                title={desc}
+                onClick={() => setPsm(value)}
+                className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                  psm === value
+                    ? 'bg-[#0C3B6E] text-white border-[#0C3B6E]'
+                    : 'bg-white text-slate-600 border-slate-300 hover:border-[#0C3B6E] hover:text-[#0C3B6E]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         )}
 
