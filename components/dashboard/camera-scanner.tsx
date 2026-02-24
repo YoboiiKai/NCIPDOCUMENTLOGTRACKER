@@ -14,13 +14,26 @@ interface CameraScannerProps {
 type ScanState = 'idle' | 'streaming' | 'cropping' | 'processing' | 'done' | 'error'
 
 // ─── Image pre-processing pipeline ─────────────────────────────────────────
-// 1. Greyscale  2. Unsharp-mask sharpening  3. Otsu binarisation  4. Padding
-// All passes are O(W×H) — no nested loops over block sizes.
+// 1. Greyscale  2. Contrast normalise  3. Sharpen  4. Adaptive threshold  5. Padding
+
+/** Stretch contrast so darkest pixel → 0, brightest → 255 (handles washed-out camera shots) */
+function normalizeContrast(data: Uint8ClampedArray) {
+  let min = 255, max = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] < min) min = data[i]
+    if (data[i] > max) max = data[i]
+  }
+  if (max === min) return
+  const range = max - min
+  for (let i = 0; i < data.length; i += 4) {
+    const v = Math.round(((data[i] - min) / range) * 255)
+    data[i] = data[i + 1] = data[i + 2] = v
+  }
+}
 
 /** Sharpen with a 3×3 Laplacian unsharp-mask kernel in-place */
 function sharpen(data: Uint8ClampedArray, w: number, h: number) {
   const copy = new Uint8ClampedArray(data)
-  // kernel: [0,-1,0, -1,5,-1, 0,-1,0]  (only luminance channel — already grayscale)
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const i = (y * w + x) * 4
@@ -36,31 +49,40 @@ function sharpen(data: Uint8ClampedArray, w: number, h: number) {
   }
 }
 
-/** Otsu's global threshold → pure black/white */
-function otsuBinarize(data: Uint8ClampedArray, total: number, invert: boolean) {
-  // Build histogram
-  const hist = new Float64Array(256)
-  for (let i = 0; i < data.length; i += 4) hist[data[i]]++
-  // Normalise
-  for (let i = 0; i < 256; i++) hist[i] /= total
-  // Find optimal threshold
-  let sumAll = 0
-  for (let i = 0; i < 256; i++) sumAll += i * hist[i]
-  let sumB = 0, wB = 0, best = 0, threshold = 0
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t]; if (!wB) continue
-    const wF = 1 - wB; if (!wF) break
-    sumB += t * hist[t]
-    const mB = sumB / wB
-    const mF = (sumAll - sumB) / wF
-    const variance = wB * wF * (mB - mF) ** 2
-    if (variance > best) { best = variance; threshold = t }
+/**
+ * Morphological closing (dilate then erode) on a binary image.
+ * Reconnects broken strokes in thin characters — critical for single word/line.
+ */
+function morphClose(data: Uint8ClampedArray, w: number, h: number, r: number = 1) {
+  // Dilation pass: a dark pixel spreads to neighbours within radius r
+  const dilated = new Uint8ClampedArray(data)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4] === 0) continue // already dark, skip
+      // check if any neighbour is dark
+      let hasDark = false
+      outer: for (let dy = -r; dy <= r && !hasDark; dy++) {
+        for (let dx = -r; dx <= r && !hasDark; dx++) {
+          const ny = y + dy, nx = x + dx
+          if (ny >= 0 && ny < h && nx >= 0 && nx < w && data[(ny * w + nx) * 4] === 0) hasDark = true
+        }
+      }
+      if (hasDark) { dilated[(y * w + x) * 4] = dilated[(y * w + x) * 4 + 1] = dilated[(y * w + x) * 4 + 2] = 0 }
+    }
   }
-  // Apply
-  for (let i = 0; i < data.length; i += 4) {
-    let v = data[i] > threshold ? 255 : 0
-    if (invert) v = 255 - v
-    data[i] = data[i + 1] = data[i + 2] = v
+  // Erosion pass: a dark pixel stays dark only if all neighbours within r are dark
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (dilated[(y * w + x) * 4] !== 0) { data[(y * w + x) * 4] = data[(y * w + x) * 4 + 1] = data[(y * w + x) * 4 + 2] = 255; continue }
+      let allDark = true
+      outer2: for (let dy = -r; dy <= r && allDark; dy++) {
+        for (let dx = -r; dx <= r && allDark; dx++) {
+          const ny = y + dy, nx = x + dx
+          if (ny >= 0 && ny < h && nx >= 0 && nx < w && dilated[(ny * w + nx) * 4] !== 0) allDark = false
+        }
+      }
+      data[(y * w + x) * 4] = data[(y * w + x) * 4 + 1] = data[(y * w + x) * 4 + 2] = allDark ? 0 : 255
+    }
   }
 }
 
@@ -80,6 +102,7 @@ function preprocessRegion(
   sourceCanvas: HTMLCanvasElement,
   cropPx: { x: number; y: number; w: number; h: number } | null,
   invert: boolean,
+  psm: '6' | '7' | '8' = '6',
 ): string {
   const sw = sourceCanvas.width
   const sh = sourceCanvas.height
@@ -91,10 +114,15 @@ function preprocessRegion(
   const ch = cropPx ? cropPx.h : sh
   if (cw < 4 || ch < 4) throw new Error('Selection is too small')
 
-  // Scale so shortest side ≥ 800 px; max 2× or longest side ≤ 2 400 px
+  // Scale targets per PSM:
+  //   PSM 6 (paragraph)  : short side ≥ 1200px
+  //   PSM 7 (single line): aim for text height ≥ 150px → scale aggressively; short side ≥ 150px but use height
+  //   PSM 8 (single word): single word — need large characters, short side ≥ 200px
   const shortSide = Math.min(cw, ch)
   const longSide  = Math.max(cw, ch)
-  const scale = Math.min(3, Math.max(1, Math.ceil(800 / shortSide), Math.ceil(1500 / longSide)))
+  const minShort = psm === '8' ? 300 : psm === '7' ? 200 : 1200
+  const minLong  = psm === '8' ? 600 : psm === '7' ? 1500 : 2000
+  const scale = Math.min(6, Math.max(1, Math.ceil(minShort / shortSide), Math.ceil(minLong / longSide)))
   const tw = Math.round(cw * scale)
   const th = Math.round(ch * scale)
 
@@ -108,7 +136,6 @@ function preprocessRegion(
 
   const imgData = ctx.getImageData(0, 0, tw, th)
   const d = imgData.data
-  const total = tw * th
 
   // 1. Greyscale
   for (let i = 0; i < d.length; i += 4) {
@@ -116,16 +143,45 @@ function preprocessRegion(
     d[i] = d[i + 1] = d[i + 2] = lum
   }
 
-  // 2. Sharpen
-  sharpen(d, tw, th)
+  // 2. Contrast normalisation
+  normalizeContrast(d)
 
-  // 3. Otsu binarise → pure black / white
-  otsuBinarize(d, total, invert)
+  // 3. Sharpen (double-pass for single line/word — crisper edges on individual chars)
+  sharpen(d, tw, th)
+  if (psm === '7' || psm === '8') sharpen(d, tw, th)
+
+  // 4. Adaptive threshold
+  //    Tighter sensitivity (t=0.15) for line/word: less noise tolerance
+  //    Smaller neighbourhood ratio for word mode to isolate individual characters
+  const threshT   = psm === '6' ? 0.12 : 0.15
+  const threshDiv = psm === '8' ? 16   : 12
+  const s2 = Math.max(10, Math.round(Math.min(tw, th) / threshDiv))
+  const iw2 = tw + 1
+  const integral2 = new Int32Array(iw2 * (th + 1))
+  for (let y = 0; y < th; y++)
+    for (let x = 0; x < tw; x++) {
+      const idx = (y + 1) * iw2 + (x + 1)
+      integral2[idx] = d[(y * tw + x) * 4] + integral2[y * iw2 + (x + 1)] + integral2[(y + 1) * iw2 + x] - integral2[y * iw2 + x]
+    }
+  for (let y = 0; y < th; y++)
+    for (let x = 0; x < tw; x++) {
+      const x1 = Math.max(0, x - s2), y1 = Math.max(0, y - s2)
+      const x2 = Math.min(tw - 1, x + s2), y2 = Math.min(th - 1, y + s2)
+      const cnt = (x2 - x1 + 1) * (y2 - y1 + 1)
+      const sm  = integral2[(y2 + 1) * iw2 + (x2 + 1)] - integral2[y1 * iw2 + (x2 + 1)] - integral2[(y2 + 1) * iw2 + x1] + integral2[y1 * iw2 + x1]
+      let v = d[(y * tw + x) * 4] * cnt < sm * (1 - threshT) ? 0 : 255
+      if (invert) v = 255 - v
+      d[(y * tw + x) * 4] = d[(y * tw + x) * 4 + 1] = d[(y * tw + x) * 4 + 2] = v
+    }
+
+  // 5. Morphological closing for single line/word (reconnect broken strokes)
+  if (psm === '7' || psm === '8') morphClose(d, tw, th, 1)
 
   ctx.putImageData(imgData, 0, 0)
 
-  // 4. Add white padding border (20 px)
-  const padded = addPadding(out, 20)
+  // 6. White padding: more breathing room for line/word modes
+  const pad = psm === '8' ? 60 : psm === '7' ? 50 : 30
+  const padded = addPadding(out, pad)
   return padded.toDataURL('image/png')
 }
 
@@ -197,22 +253,34 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
         },
       })
       // Apply PSM and additional Tesseract parameters for accuracy
-      await (worker as any).setParameters({
-        tessedit_pageseg_mode: psm,
-        // preserve_interword_spaces: '1',
-      })
+      const tParams: Record<string, string> = {
+        tessedit_pageseg_mode:     psm,
+        preserve_interword_spaces: '1',
+        tessedit_do_invert:        '0',
+        user_defined_dpi:          '300',
+        tessedit_unrej_any_wd:     '1',   // accept any word even at low confidence
+      }
+      if (psm === '7') {
+        tParams.textord_min_linesize = '2.5'  // helps with thin single-line text
+      }
+      if (psm === '8') {
+        tParams.textord_min_linesize  = '2'
+        tParams.classify_min_slope    = '0'   // ignore character slant variation
+      }
+      await (worker as any).setParameters(tParams)
       setProgress(25)
       const { data } = await worker.recognize(dataUrl)
       await worker.terminate()
       setProgress(100)
-      const cleaned = data.text
+      const lines = data.text
         .replace(/\r\n|\r/g, '\n')
         .replace(/[ \t]+/g, ' ')
         .split('\n')
         .map((l: string) => l.trim())
         .filter((l: string) => l.length > 0)
-        .join(psm === '7' || psm === '8' ? '' : ' ')
-        .trim()
+      const cleaned = psm === '6'
+        ? lines.join('\n').trim()          // paragraph: preserve line breaks
+        : lines.join(' ').trim()           // single line / word: flatten
       setEditableText(cleaned || '(No text detected — try a different text mode or better lighting)')
       setScanState('done')
     } catch (err: any) {
@@ -289,17 +357,17 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
       w: Math.round((cropSel.w / dW) * canvas.width),
       h: Math.round((cropSel.h / dH) * canvas.height),
     }
-    try { runOCR(preprocessRegion(canvas, cropPx, invert)) }
+    try { runOCR(preprocessRegion(canvas, cropPx, invert, psm)) }
     catch (err: any) { setErrorMsg(`Preprocessing failed: ${err?.message}`); setScanState('error') }
-  }, [cropSel, invert, runOCR])
+  }, [cropSel, invert, psm, runOCR])
 
   // ── Extract full image ─────────────────────────────────────────────────────
   const handleExtractFull = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    try { runOCR(preprocessRegion(canvas, null, invert)) }
+    try { runOCR(preprocessRegion(canvas, null, invert, psm)) }
     catch (err: any) { setErrorMsg(`Preprocessing failed: ${err?.message}`); setScanState('error') }
-  }, [invert, runOCR])
+  }, [invert, psm, runOCR])
 
   // ── Upload fallback ────────────────────────────────────────────────────────
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
