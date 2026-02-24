@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
+
+const DEMO_PASSWORD = 'ncip2026'
 
 export default function LoginPage() {
   const router = useRouter()
   const { login } = useAuth()
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -19,9 +24,19 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    // Simple email validation
+    // Validation
     if (!email || !email.includes('@')) {
       setError('Please enter a valid email address')
+      setLoading(false)
+      return
+    }
+    if (!password) {
+      setError('Please enter your password')
+      setLoading(false)
+      return
+    }
+    if (password !== DEMO_PASSWORD) {
+      setError('Incorrect password. Please try again.')
       setLoading(false)
       return
     }
@@ -98,6 +113,33 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Password field */}
+            <div className="space-y-2">
+              <label htmlFor="password" className="block text-sm font-medium text-white/90">
+                Password
+              </label>
+              <div className="relative group">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  className="bg-white/10 border border-white/20 placeholder:text-white/50 text-white h-12 pr-11 rounded-lg focus:bg-white/15 focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/30 transition-all duration-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/90 transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 animate-in fade-in slide-in-from-top-2 duration-300">
                 <p className="text-red-200 text-sm font-medium text-center">{error}</p>
@@ -127,7 +169,7 @@ export default function LoginPage() {
           <div className="mt-8 pt-6 border-t border-white/10">
             <div className="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
               <p className="text-xs text-blue-100/80 text-center">
-                💡 Demo Mode: Use any email address to sign in
+                💡 Demo Mode — Email: any valid address &nbsp;·&nbsp; Password: <code className="font-mono text-blue-300">ncip2026</code>
               </p>
             </div>
           </div>
