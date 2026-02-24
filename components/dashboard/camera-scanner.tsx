@@ -555,7 +555,7 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
 
             {/* Streaming */}
             {scanState === 'streaming' && (
@@ -571,28 +571,41 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
                   type="button"
                   onClick={handleExtractCrop}
                   disabled={!hasValidCrop}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
+                  title="Extract Selection"
+                  className="w-10 h-10 p-0 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
                 >
-                  <Crop className="w-4 h-4 mr-1" /> Extract Selection
+                  <Crop className="w-5 h-5" />
                 </Button>
-                <Button type="button" variant="outline" onClick={handleExtractFull} className="flex-1">
-                  <Maximize2 className="w-4 h-4 mr-1" /> Scan Full Image
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleExtractFull}
+                  title="Scan Full Image"
+                  className="w-10 h-10 p-0"
+                >
+                  <Maximize2 className="w-5 h-5" />
                 </Button>
-                <Button type="button" variant="ghost" onClick={handleRetry} className="w-full text-sm text-muted-foreground">
-                  <RotateCcw className="w-3.5 h-3.5 mr-1" /> Retake Photo
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleRetry}
+                  title="Retake Photo"
+                  className="w-10 h-10 p-0 text-muted-foreground"
+                >
+                  <RotateCcw className="w-5 h-5" />
                 </Button>
               </>
             )}
 
             {/* Done / error */}
             {(scanState === 'done' || scanState === 'error') && (
-              <Button type="button" variant="outline" onClick={handleRetry} className="flex-1">
-                <RotateCcw className="w-4 h-4 mr-1" /> Retry
+              <Button type="button" variant="outline" onClick={handleRetry} title="Retry" className="w-10 h-10 p-0">
+                <RotateCcw className="w-5 h-5" />
               </Button>
             )}
             {scanState === 'done' && (
-              <Button type="button" onClick={handleConfirm} className="flex-1 bg-green-600 hover:bg-green-700 text-white">
-                <Check className="w-4 h-4 mr-1" /> Use This Text
+              <Button type="button" onClick={handleConfirm} title="Use This Text" className="w-10 h-10 p-0 bg-green-600 hover:bg-green-700 text-white">
+                <Check className="w-5 h-5" />
               </Button>
             )}
 
@@ -601,9 +614,10 @@ export default function CameraScanner({ isOpen, fieldLabel, onClose, onResult }:
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-sm hover:bg-accent/10 transition-colors"
+                title="Upload Image"
+                className="inline-flex items-center justify-center w-10 h-10 rounded-md border hover:bg-accent/10 transition-colors"
               >
-                <Upload className="w-4 h-4" /> Upload Image
+                <Upload className="w-5 h-5" />
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
