@@ -1,304 +1,262 @@
-'use client'
+"use client"
 
-import React from 'react'
-
-import { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { addDocument, DocumentCategory } from '@/lib/document-store'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
+import { Plus, X, ScanLine } from 'lucide-react'
+import CameraScanner from './camera-scanner'
 
 interface AddDocumentModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onAdd: () => void
+	isOpen: boolean
+	onClose: () => void
+	onAdd?: () => void
 }
 
-export default function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
-  const [title, setTitle] = useState('')
-  const [referenceNumber, setReferenceNumber] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [status, setStatus] = useState<'Pending' | 'Approved' | 'Archived'>('Pending')
-  const [category, setCategory] = useState<DocumentCategory>('LBC')
-  const [notes, setNotes] = useState('')
-  const [loading, setLoading] = useState(false)
-  
-  // New fields to match table columns
-  const [to, setTo] = useState('')
-  const [signatory, setSignatory] = useState('')
-  const [subject, setSubject] = useState('')
-  const [dotsNo, setDotsNo] = useState('')
-  const [dateReleased, setDateReleased] = useState(new Date().toISOString().split('T')[0])
-  const [remarksCourier, setRemarksCourier] = useState('')
-  const [trackingNumber, setTrackingNumber] = useState('')
-  const [dateMailed, setDateMailed] = useState(new Date().toISOString().split('T')[0])
+const categories: DocumentCategory[] = [
+	'LBC',
+	'Registered',
+	'Pick-up',
+	'Personal Delivery',
+	'Email',
+	'CAR',
+	'R1',
+	'R2',
+	'R3',
+	'R4',
+	'R5',
+	'R6',
+	'R7',
+	'R8',
+	'R9',
+	'R10',
+	'R11',
+	'R12',
+	'R13',
+]
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
+	const [title, setTitle] = useState('')
+	const [referenceNumber, setReferenceNumber] = useState('')
+	const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10))
+	const [status, setStatus] = useState<'Pending' | 'Approved' | 'Archived'>('Pending')
+	const [notes, setNotes] = useState('')
+	const [category, setCategory] = useState<DocumentCategory>('Registered')
 
-    if (!to || !signatory || !subject || !dotsNo) {
-      return
-    }
+	// extended table columns
+	const [to, setTo] = useState('')
+	const [signatory, setSignatory] = useState('')
+	const [subject, setSubject] = useState('')
+	const [dotsNo, setDotsNo] = useState('')
+	const [dateReleased, setDateReleased] = useState<string>('')
+	const [remarksCourier, setRemarksCourier] = useState('')
+	const [trackingNumber, setTrackingNumber] = useState('')
+	const [dateMailed, setDateMailed] = useState<string>('')
 
-    setLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+	// scanner state
+	const [scannerOpen, setScannerOpen] = useState(false)
+	const [scannerLabel, setScannerLabel] = useState('')
+	const [activeSetter, setActiveSetter] = useState<((v: string) => void) | null>(null)
 
-    addDocument({
-      title: subject, // Use subject as title
-      referenceNumber: dotsNo, // Use dotsNo as reference number
-      date: dateMailed, // Use dateMailed as the main date
-      status,
-      category,
-      notes,
-      to,
-      signatory,
-      subject,
-      dotsNo,
-      dateReleased,
-      remarksCourier,
-      trackingNumber,
-      dateMailed,
-    })
+	const openScanner = (label: string, setter: (v: string) => void) => {
+		setScannerLabel(label)
+		setActiveSetter(() => setter)
+		setScannerOpen(true)
+	}
 
-    setTitle('')
-    setReferenceNumber('')
-    setDate(new Date().toISOString().split('T')[0])
-    setStatus('Pending')
-    setCategory('LBC')
-    setNotes('')
-    setTo('')
-    setSignatory('')
-    setSubject('')
-    setDotsNo('')
-    setDateReleased(new Date().toISOString().split('T')[0])
-    setRemarksCourier('')
-    setTrackingNumber('')
-    setDateMailed(new Date().toISOString().split('T')[0])
-    setLoading(false)
+	// lock body scroll when modal is open (mobile friendly)
+	useEffect(() => {
+		const prev = typeof document !== 'undefined' ? document.body.style.overflow : ''
+		if (isOpen) document.body.style.overflow = 'hidden'
+		return () => {
+			if (typeof document !== 'undefined') document.body.style.overflow = prev
+		}
+	}, [isOpen])
 
-    onAdd()
-    onClose()
-  }
+	if (!isOpen) return null
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add New Document</DialogTitle>
-          <DialogDescription>Create a new document log entry</DialogDescription>
-        </DialogHeader>
+	const ScanButton = ({ label, setter }: { label: string; setter: (v: string) => void }) => (
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon"
+			title={`Scan text for ${label}`}
+			className="w-10 h-10 shrink-0 rounded-md border border-input flex items-center justify-center hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 transition-colors"
+			onClick={() => openScanner(label, setter)}
+		>
+			<ScanLine className="w-4 h-4 text-blue-500" />
+		</Button>
+	)
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="to" className="text-sm font-medium">
-                TO <span className="text-destructive">*</span>
-              </label>
-              <Input
-                id="to"
-                placeholder="e.g., Office of Records"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                disabled={loading}
-                className="bg-secondary/30"
-              />
-            </div>
+	const handleSubmit = (e: React.FormEvent) => {
+		e.preventDefault()
 
-            <div className="space-y-2">
-              <label htmlFor="signatory" className="text-sm font-medium">
-                SIGNATORY <span className="text-destructive">*</span>
-              </label>
-              <Input
-                id="signatory"
-                placeholder="e.g., A. Santos"
-                value={signatory}
-                onChange={(e) => setSignatory(e.target.value)}
-                disabled={loading}
-                className="bg-secondary/30"
-              />
-            </div>
-          </div>
+		const doc = {
+			title: title || 'Untitled',
+			referenceNumber: referenceNumber || `REF-${Date.now()}`,
+			date: date ? new Date(date).toISOString() : new Date().toISOString(),
+			status,
+			notes,
+			category,
+			to: to || undefined,
+			signatory: signatory || undefined,
+			subject: subject || title || undefined,
+			dotsNo: dotsNo || undefined,
+			dateReleased: dateReleased ? new Date(dateReleased).toISOString() : undefined,
+			remarksCourier: remarksCourier || undefined,
+			trackingNumber: trackingNumber || undefined,
+			dateMailed: dateMailed ? new Date(dateMailed).toISOString() : undefined,
+		}
 
-          <div className="space-y-2">
-            <label htmlFor="subject" className="text-sm font-medium">
-              SUBJECT <span className="text-destructive">*</span>
-            </label>
-            <Input
-              id="subject"
-              placeholder="e.g., Title transfer for Lot 12"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              disabled={loading}
-              className="bg-secondary/30"
-            />
-          </div>
+		try {
+			addDocument(doc)
+			onAdd?.()
+			onClose()
+			// clear form
+			setTitle('')
+			setReferenceNumber('')
+			setDate(new Date().toISOString().slice(0, 10))
+			setStatus('Pending')
+			setNotes('')
+			setCategory('Registered')
+			setTo('')
+			setSignatory('')
+			setSubject('')
+			setDotsNo('')
+			setDateReleased('')
+			setRemarksCourier('')
+			setTrackingNumber('')
+			setDateMailed('')
+		} catch (err) {
+			console.error('Failed to add document', err)
+		}
+	}
 
-          <div className="space-y-2">
-            <label htmlFor="dotsNo" className="text-sm font-medium">
-              DOTS NO. <span className="text-destructive">*</span>
-            </label>
-            <Input
-              id="dotsNo"
-              placeholder="e.g., DOTS-001"
-              value={dotsNo}
-              onChange={(e) => setDotsNo(e.target.value)}
-              disabled={loading}
-              className="bg-secondary/30"
-            />
-          </div>
+	return (
+		<div className="fixed inset-0 z-50 flex items-center justify-center">
+			<div className="fixed inset-0 bg-black/45" onClick={onClose} />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="category" className="text-sm font-medium">
-                Category
-              </label>
-              <Select value={category} onValueChange={(value: any) => setCategory(value)}>
-                <SelectTrigger disabled={loading} className="bg-secondary/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="LBC">LBC</SelectItem>
-                  <SelectItem value="Registered">Registered</SelectItem>
-                  <SelectItem value="Pick-up">Pick-up</SelectItem>
-                  <SelectItem value="Personal Delivery">Personal Delivery</SelectItem>
-                  <SelectItem value="Email">Email</SelectItem>
-                  <SelectItem value="CAR">CAR</SelectItem>
-                  <SelectItem value="R1">R1</SelectItem>
-                  <SelectItem value="R2">R2</SelectItem>
-                  <SelectItem value="R3">R3</SelectItem>
-                  <SelectItem value="R4">R4</SelectItem>
-                  <SelectItem value="R5">R5</SelectItem>
-                  <SelectItem value="R6">R6</SelectItem>
-                  <SelectItem value="R7">R7</SelectItem>
-                  <SelectItem value="R8">R8</SelectItem>
-                  <SelectItem value="R9">R9</SelectItem>
-                  <SelectItem value="R10">R10</SelectItem>
-                  <SelectItem value="R11">R11</SelectItem>
-                  <SelectItem value="R12">R12</SelectItem>
-                  <SelectItem value="R13">R13</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+			<form
+				onSubmit={handleSubmit}
+				className="relative z-10 w-full max-w-3xl mx-4 my-8 bg-white dark:bg-[#071029] rounded-xl shadow-lg overflow-hidden flex flex-col max-h-[90vh]"
+			>
+				<div className="flex items-center justify-between gap-4 bg-gradient-to-r from-[#0A2D55] via-[#0C3B6E] to-[#0A2D55] text-white px-4 py-3">
+					<div className="flex items-center gap-3">
+						<div className="p-2 bg-white/10 rounded-md">
+							<Plus className="w-5 h-5" />
+						</div>
+						<div>
+							<h3 className="text-lg font-semibold">Add Document</h3>
+							<p className="text-sm opacity-90">Provide document details to add to the register</p>
+						</div>
+					</div>
+					<button type="button" onClick={onClose} aria-label="Close" className="rounded-md p-2 hover:bg-white/10">
+						<X className="w-4 h-4 text-white/90" />
+					</button>
+				</div>
 
-            <div className="space-y-2">
-              <label htmlFor="status" className="text-sm font-medium">
-                Status
-              </label>
-              <Select value={status} onValueChange={(value: any) => setStatus(value)}>
-                <SelectTrigger disabled={loading} className="bg-secondary/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="Approved">Approved</SelectItem>
-                  <SelectItem value="Archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+				<div className="p-4 overflow-auto flex-1 pb-28 md:pb-0">
+					<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						{/* To */}
+						<div>
+							<label className="text-xs font-medium">To</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input placeholder="Recipient" value={to} onChange={(e) => setTo(e.target.value)} className="flex-1" />
+						<ScanButton label="To" setter={setTo} />
+							</div>
+						</div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="dateReleased" className="text-sm font-medium">
-                DATE RELEASED
-              </label>
-              <Input
-                id="dateReleased"
-                type="date"
-                value={dateReleased}
-                onChange={(e) => setDateReleased(e.target.value)}
-                disabled={loading}
-                className="bg-secondary/30"
-              />
-            </div>
+						{/* Signatory */}
+						<div>
+							<label className="text-xs font-medium">Signatory</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input placeholder="Signer" value={signatory} onChange={(e) => setSignatory(e.target.value)} className="flex-1" />
+						<ScanButton label="Signatory" setter={setSignatory} />
+							</div>
+						</div>
 
-            <div className="space-y-2">
-              <label htmlFor="remarksCourier" className="text-sm font-medium">
-                REMARKS / COURIER
-              </label>
-              <Input
-                id="remarksCourier"
-                placeholder="e.g., LBC"
-                value={remarksCourier}
-                onChange={(e) => setRemarksCourier(e.target.value)}
-                disabled={loading}
-                className="bg-secondary/30"
-              />
-            </div>
-          </div>
+						{/* Subject */}
+						<div>
+							<label className="text-xs font-medium">Subject</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input placeholder="Subject or summary" value={subject} onChange={(e) => setSubject(e.target.value)} className="flex-1" />
+						<ScanButton label="Subject" setter={setSubject} />
+							</div>
+						</div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="trackingNumber" className="text-sm font-medium">
-                TRACKING NO.
-              </label>
-              <Input
-                id="trackingNumber"
-                placeholder="e.g., LBC-555-001"
-                value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
-                disabled={loading}
-                className="bg-secondary/30"
-              />
-            </div>
+						{/* DOTS */}
+						<div>
+							<label className="text-xs font-medium">DOTS No.</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input placeholder="DOTS-xxx" value={dotsNo} onChange={(e) => setDotsNo(e.target.value)} className="flex-1 font-mono" />
+						<ScanButton label="DOTS No." setter={setDotsNo} />
+							</div>
+						</div>
 
-            <div className="space-y-2">
-              <label htmlFor="dateMailed" className="text-sm font-medium">
-                DATE MAILED via JRMP
-              </label>
-              <Input
-                id="dateMailed"
-                type="date"
-                value={dateMailed}
-                onChange={(e) => setDateMailed(e.target.value)}
-                disabled={loading}
-                className="bg-secondary/30"
-              />
-            </div>
-          </div>
+						{/* Date Released */}
+						<div>
+							<label className="text-xs font-medium">Date Released</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input type="date" value={dateReleased} onChange={(e) => setDateReleased(e.target.value)} className="flex-1" />
+						<ScanButton label="Date Released" setter={setDateReleased} />
+							</div>
+						</div>
 
-          <div className="space-y-2">
-            <label htmlFor="notes" className="text-sm font-medium">
-              Notes (Optional)
-            </label>
-            <textarea
-              id="notes"
-              placeholder="Add any additional notes..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              disabled={loading}
-              rows={3}
-              className="w-full px-3 py-2 border border-border rounded-lg bg-secondary/30 text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-            />
-          </div>
+						{/* Remarks / Courier */}
+						<div>
+							<label className="text-xs font-medium">Remarks / Courier</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input placeholder="Courier or remarks" value={remarksCourier} onChange={(e) => setRemarksCourier(e.target.value)} className="flex-1" />
+						<ScanButton label="Remarks / Courier" setter={setRemarksCourier} />
+							</div>
+						</div>
 
-          <div className="flex gap-3 pt-4 sticky bottom-0 bg-background pb-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={loading || !to || !signatory || !subject || !dotsNo}
-              className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground"
-            >
-              {loading ? 'Adding...' : 'Add Document'}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
+						{/* Tracking Number */}
+						<div>
+							<label className="text-xs font-medium">Tracking Number</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input placeholder="Tracking #" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} className="flex-1 font-mono" />
+						<ScanButton label="Tracking Number" setter={setTrackingNumber} />
+							</div>
+						</div>
+
+						{/* Date Mailed */}
+						<div>
+							<label className="text-xs font-medium">Date Mailed</label>
+							<div className="mt-1 flex items-center gap-2">
+								<Input type="date" value={dateMailed} onChange={(e) => setDateMailed(e.target.value)} className="flex-1" />
+						<ScanButton label="Date Mailed" setter={setDateMailed} />
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div className="flex items-center justify-between gap-4 px-4 py-3 border-t bg-muted/5 sticky bottom-0 bg-opacity-90 backdrop-blur-sm">
+					<div className="text-xs text-muted-foreground">All fields can be edited later from the table.</div>
+					<div className="flex items-center gap-2">
+						<Button variant="outline" onClick={onClose}>Cancel</Button>
+						<Button type="submit" variant="default">
+							<Plus className="w-4 h-4" />
+							Add Document
+						</Button>
+					</div>
+				</div>
+			</form>
+
+		<CameraScanner
+			isOpen={scannerOpen}
+			fieldLabel={scannerLabel}
+			onClose={() => setScannerOpen(false)}
+			onResult={(text) => {
+				activeSetter?.(text)
+				setScannerOpen(false)
+			}}
+		/>
+		</div>
+	)
 }
+
+export { AddDocumentModal }
+export default AddDocumentModal
+

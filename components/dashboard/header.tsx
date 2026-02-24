@@ -4,17 +4,33 @@ import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LogOut, Settings, User } from 'lucide-react'
+import { LogOut, Settings, User, LayoutDashboard, FileText, BarChart3, Users } from 'lucide-react'
 import Image from 'next/image'
 
 export default function Header() {
   const { userEmail, logout } = useAuth()
   const router = useRouter()
   const [showDropdown, setShowDropdown] = useState(false)
+  const [activeNav, setActiveNav] = useState('documents')
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+    { id: 'documents', label: 'Documents', icon: FileText, path: '/dashboard' },
+    { id: 'reports', label: 'Reports', icon: BarChart3, path: '/dashboard' },
+    { id: 'users', label: 'Users', icon: Users, path: '/dashboard' },
+    { id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings' },
+  ]
 
   const handleLogout = () => {
     logout()
     router.push('/login')
+  }
+
+  const handleNavClick = (item: typeof navItems[0]) => {
+    setActiveNav(item.id)
+    if (item.path) {
+      router.push(item.path)
+    }
   }
 
   return (
@@ -28,13 +44,15 @@ export default function Header() {
           <div className="relative">
             <div className="absolute inset-0 bg-white/20 rounded-full blur-md"></div>
             <div className="relative bg-white/95 rounded-full shadow-lg ring-2 ring-white/30 backdrop-blur-sm w-10 h-10 sm:w-14 sm:h-14 flex items-center justify-center overflow-hidden">
-              <Image
-                src="/Logo/ncip.png"
-                alt="NCIP Logo"
-                width={52}
-                height={52}
-                className="object-contain w-full h-full"
-              />
+              <div className="relative w-full h-full">
+                <Image
+                  src="/Logo/ncip.png"
+                  alt="NCIP Logo"
+                  fill
+                  sizes="(max-width: 640px) 36px, 56px"
+                  className="object-contain"
+                />
+              </div>
             </div>
           </div>
           
@@ -47,70 +65,40 @@ export default function Header() {
             </div>
           </div>
         </div>
-
-        <div className="flex items-center gap-5">
-          {/* User Profile Circle with Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowDropdown(!showDropdown)}
-              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border-2 border-white/30 flex items-center justify-center text-white font-semibold text-sm hover:bg-white/30 transition-all duration-200 hover:scale-105 shadow-lg"
-            >
-              {userEmail?.charAt(0).toUpperCase() || 'U'}
-            </button>
-            
-            {/* Dropdown Menu */}
-            {showDropdown && (
-              <>
-                <div
-                  className="fixed inset-0 z-[100]"
-                  onClick={() => setShowDropdown(false)}
-                />
-                <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-2xl z-[101] overflow-hidden">
-                  {/* User Info */}
-                  <div className="px-4 py-3 bg-muted/50 border-b border-border">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold">
-                        {userEmail?.charAt(0).toUpperCase() || 'U'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">{userEmail}</p>
-                        <p className="text-xs text-muted-foreground">Administrator</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Menu Items */}
-                  <div className="py-1">
-                    <button
-                      onClick={() => {
-                        setShowDropdown(false)
-                        // Add settings navigation here
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 hover:bg-muted transition-colors"
-                    >
-                      <Settings size={16} className="text-muted-foreground" />
-                      <span>Settings</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowDropdown(false)
-                        handleLogout()
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 hover:bg-muted transition-colors text-destructive"
-                    >
-                      <LogOut size={16} />
-                      <span>Logout</span>
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
       </div>
       
       {/* Bottom accent line */}
       <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-blue-400/50 to-transparent"></div>
+
+      {/* Navigation Menu Bar */}
+      <div className="bg-[#0A2D55]/95 backdrop-blur-sm border-t border-white/5">
+        <div className="container mx-auto px-3 sm:px-6 max-w-7xl">
+          <nav className="flex items-center overflow-x-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const isActive = activeNav === item.id
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavClick(item)}
+                  className={`
+                    flex items-center gap-2 px-4 sm:px-6 py-3 text-sm font-medium transition-all
+                    border-b-2 whitespace-nowrap
+                    ${
+                      isActive
+                        ? 'border-accent text-white bg-white/10'
+                        : 'border-transparent text-white/70 hover:text-white hover:bg-white/5'
+                    }
+                  `}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{item.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+      </div>
     </header>
   )
 }

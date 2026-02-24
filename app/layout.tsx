@@ -9,9 +9,13 @@ const _geist = Geist({ subsets: ['latin'] })
 const _geistMono = Geist_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'DocLog - Document Management System',
-  description: 'Modern document log management system',
+  title: 'NCIP - Document Log System',
+  description: 'National Commission on Indigenous People - Document Log Management System',
   generator: 'v0.app',
+  icons: {
+    icon: '/Logo/ncip.png',
+    apple: '/Logo/ncip.png',
+  },
 }
 
 export default function RootLayout({
