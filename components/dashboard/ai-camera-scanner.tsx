@@ -80,13 +80,14 @@ export default function AiCameraScanner({
   onClose,
   onResult,
 }: AiCameraScannerProps) {
-  const videoRef       = useRef<HTMLVideoElement>(null)
-  const canvasRef      = useRef<HTMLCanvasElement>(null)
-  const streamRef      = useRef<MediaStream | null>(null)
-  const fileInputRef   = useRef<HTMLInputElement>(null)
-  const cropOverlayRef = useRef<HTMLDivElement>(null)
-  const isDragging     = useRef(false)
-  const dragStart      = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const videoRef          = useRef<HTMLVideoElement>(null)
+  const canvasRef         = useRef<HTMLCanvasElement>(null)
+  const streamRef         = useRef<MediaStream | null>(null)
+  const fileInputRef      = useRef<HTMLInputElement>(null)
+  const cropOverlayRef    = useRef<HTMLDivElement>(null)
+  const imageContainerRef = useRef<HTMLDivElement>(null)
+  const isDragging        = useRef(false)
+  const dragStart         = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   const [scanState,    setScanState]    = useState<ScanState>('idle')
   const [editableText, setEditableText] = useState('')
@@ -187,19 +188,58 @@ export default function AiCameraScanner({
 
   // ── Capture: freeze frame → go to cropping ─────────────────────────────────
 
+  // Guide box proportions — must match the streaming overlay below
+  const GUIDE_W_PCT = 0.78
+  const GUIDE_H_PCT = 0.55
+
   const handleCapture = useCallback(() => {
-    const video  = videoRef.current
-    const canvas = canvasRef.current
+    const video     = videoRef.current
+    const canvas    = canvasRef.current
+    const container = imageContainerRef.current
     if (!video || !canvas) return
     if (!video.videoWidth || !video.videoHeight) {
       setErrorMsg('Video not ready yet — please wait a moment.')
       setScanState('error')
       return
     }
-    canvas.width  = video.videoWidth
-    canvas.height = video.videoHeight
+
+    // Draw the full video frame first
+    const vW = video.videoWidth
+    const vH = video.videoHeight
+    canvas.width  = vW
+    canvas.height = vH
     canvas.getContext('2d')!.drawImage(video, 0, 0)
     stopCamera()
+
+    // ── Map the guide box from display space → video pixel space ──────────
+    // The video is rendered with object-cover inside the container.
+    const dW = container?.offsetWidth  ?? vW
+    const dH = container?.offsetHeight ?? vH
+    const scale   = Math.max(dW / vW, dH / vH)   // object-cover scale
+    const offsetX = (dW - vW * scale) / 2          // can be negative
+    const offsetY = (dH - vH * scale) / 2
+
+    // Guide box in display coords (centred)
+    const gDispX = dW * (1 - GUIDE_W_PCT) / 2
+    const gDispY = dH * (1 - GUIDE_H_PCT) / 2
+    const gDispW = dW * GUIDE_W_PCT
+    const gDispH = dH * GUIDE_H_PCT
+
+    // Convert to video pixel coords
+    const gPxX = Math.max(0, Math.round((gDispX - offsetX) / scale))
+    const gPxY = Math.max(0, Math.round((gDispY - offsetY) / scale))
+    const gPxW = Math.min(vW - gPxX, Math.round(gDispW / scale))
+    const gPxH = Math.min(vH - gPxY, Math.round(gDispH / scale))
+
+    // Blit only the guide-box region onto the canvas
+    const tmp    = document.createElement('canvas')
+    tmp.width    = gPxW
+    tmp.height   = gPxH
+    tmp.getContext('2d')!.drawImage(canvas, gPxX, gPxY, gPxW, gPxH, 0, 0, gPxW, gPxH)
+    canvas.width  = gPxW
+    canvas.height = gPxH
+    canvas.getContext('2d')!.drawImage(tmp, 0, 0)
+
     setCropSel(null)
     setScanState('cropping')
   }, [stopCamera])
@@ -332,7 +372,7 @@ export default function AiCameraScanner({
         </div>
 
         {/* ── Image area ── */}
-        <div className="relative bg-black w-full overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        <div ref={imageContainerRef} className="relative bg-black w-full overflow-hidden" style={{ aspectRatio: '4/3' }}>
 
           {/* Live video */}
           <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
