@@ -5,8 +5,9 @@ import { addDocument, DocumentCategory } from '@/lib/document-store'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Plus, X, ScanLine } from 'lucide-react'
+import { Plus, X, ScanLine, Sparkles } from 'lucide-react'
 import CameraScanner from './camera-scanner'
+import AiCameraScanner from './ai-camera-scanner'
 
 interface AddDocumentModalProps {
 	isOpen: boolean
@@ -65,6 +66,17 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 		setScannerOpen(true)
 	}
 
+	// AI scanner state
+	const [aiScannerOpen, setAiScannerOpen] = useState(false)
+	const [aiScannerLabel, setAiScannerLabel] = useState('')
+	const [aiActiveSetter, setAiActiveSetter] = useState<((v: string) => void) | null>(null)
+
+	const openAiScanner = (label: string, setter: (v: string) => void) => {
+		setAiScannerLabel(label)
+		setAiActiveSetter(() => setter)
+		setAiScannerOpen(true)
+	}
+
 	// lock body scroll when modal is open (mobile friendly)
 	useEffect(() => {
 		const prev = typeof document !== 'undefined' ? document.body.style.overflow : ''
@@ -86,6 +98,19 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 			onClick={() => openScanner(label, setter)}
 		>
 			<ScanLine className="w-4 h-4 text-blue-500" />
+		</Button>
+	)
+
+	const AiScanButton = ({ label, setter }: { label: string; setter: (v: string) => void }) => (
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon"
+			title={`AI scan for ${label}`}
+			className="w-10 h-10 shrink-0 rounded-md border border-input flex items-center justify-center hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-400 transition-colors"
+			onClick={() => openAiScanner(label, setter)}
+		>
+			<Sparkles className="w-4 h-4 text-purple-500" />
 		</Button>
 	)
 
@@ -163,8 +188,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">To</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input placeholder="Recipient" value={to} onChange={(e) => setTo(e.target.value)} className="flex-1" />
-						<ScanButton label="To" setter={setTo} />
-							</div>
+						<ScanButton label="To" setter={setTo} />					<AiScanButton label="To" setter={setTo} />							</div>
 						</div>
 
 						{/* Signatory */}
@@ -172,8 +196,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">Signatory</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input placeholder="Signer" value={signatory} onChange={(e) => setSignatory(e.target.value)} className="flex-1" />
-						<ScanButton label="Signatory" setter={setSignatory} />
-							</div>
+						<ScanButton label="Signatory" setter={setSignatory} />					<AiScanButton label="Signatory" setter={setSignatory} />							</div>
 						</div>
 
 						{/* Subject */}
@@ -181,8 +204,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">Subject</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input placeholder="Subject or summary" value={subject} onChange={(e) => setSubject(e.target.value)} className="flex-1" />
-						<ScanButton label="Subject" setter={setSubject} />
-							</div>
+						<ScanButton label="Subject" setter={setSubject} />					<AiScanButton label="Subject" setter={setSubject} />							</div>
 						</div>
 
 						{/* DOTS */}
@@ -190,8 +212,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">DOTS No.</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input placeholder="DOTS-xxx" value={dotsNo} onChange={(e) => setDotsNo(e.target.value)} className="flex-1 font-mono" />
-						<ScanButton label="DOTS No." setter={setDotsNo} />
-							</div>
+						<ScanButton label="DOTS No." setter={setDotsNo} />					<AiScanButton label="DOTS No." setter={setDotsNo} />							</div>
 						</div>
 
 						{/* Date Released */}
@@ -199,8 +220,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">Date Released</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input type="date" value={dateReleased} onChange={(e) => setDateReleased(e.target.value)} className="flex-1" />
-						<ScanButton label="Date Released" setter={setDateReleased} />
-							</div>
+						<ScanButton label="Date Released" setter={setDateReleased} />					<AiScanButton label="Date Released" setter={setDateReleased} />							</div>
 						</div>
 
 						{/* Remarks / Courier */}
@@ -208,8 +228,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">Remarks / Courier</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input placeholder="Courier or remarks" value={remarksCourier} onChange={(e) => setRemarksCourier(e.target.value)} className="flex-1" />
-						<ScanButton label="Remarks / Courier" setter={setRemarksCourier} />
-							</div>
+						<ScanButton label="Remarks / Courier" setter={setRemarksCourier} />					<AiScanButton label="Remarks / Courier" setter={setRemarksCourier} />							</div>
 						</div>
 
 						{/* Tracking Number */}
@@ -217,8 +236,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">Tracking Number</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input placeholder="Tracking #" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} className="flex-1 font-mono" />
-						<ScanButton label="Tracking Number" setter={setTrackingNumber} />
-							</div>
+						<ScanButton label="Tracking Number" setter={setTrackingNumber} />					<AiScanButton label="Tracking Number" setter={setTrackingNumber} />							</div>
 						</div>
 
 						{/* Date Mailed */}
@@ -226,8 +244,7 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 							<label className="text-xs font-medium">Date Mailed</label>
 							<div className="mt-1 flex items-center gap-2">
 								<Input type="date" value={dateMailed} onChange={(e) => setDateMailed(e.target.value)} className="flex-1" />
-						<ScanButton label="Date Mailed" setter={setDateMailed} />
-							</div>
+						<ScanButton label="Date Mailed" setter={setDateMailed} />					<AiScanButton label="Date Mailed" setter={setDateMailed} />							</div>
 						</div>
 					</div>
 				</div>
@@ -251,6 +268,15 @@ function AddDocumentModal({ isOpen, onClose, onAdd }: AddDocumentModalProps) {
 			onResult={(text) => {
 				activeSetter?.(text)
 				setScannerOpen(false)
+			}}
+		/>
+		<AiCameraScanner
+			isOpen={aiScannerOpen}
+			fieldLabel={aiScannerLabel}
+			onClose={() => setAiScannerOpen(false)}
+			onResult={(text) => {
+				aiActiveSetter?.(text)
+				setAiScannerOpen(false)
 			}}
 		/>
 		</div>
